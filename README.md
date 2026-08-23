@@ -36,14 +36,6 @@ Prediction
        ↓
 Phishing / Legitimate
 
-Add a screenshot of your application here once you have one.
-
-screenshots/
-└── home.png
-
-Then you can display it using:
-
-![Phishing Detection System](screenshots/home.png)
 🧠 How It Works
 
 The system analyzes different characteristics of a URL before making a prediction.
