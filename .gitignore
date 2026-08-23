@@ -10,12 +10,23 @@ data/raw/
 data/processed/
 
 # Large ML models
+# Managed through Git LFS
 models/*.pkl
 models/*.joblib
 models/*.h5
 models/*.pt
 models/*.pth
 models/*.onnx
+
+# Allow required model files tracked by Git LFS
+!models/deployable_url_model.pkl
+!models/final_url_model.pkl
+!models/phishing_combined_model.pkl
+!models/redesigned_url_model.pkl
+
+# Small vectorizers
+!models/final_url_tfidf_vectorizer.pkl
+!models/url_tfidf_vectorizer.pkl
 
 # Generated evaluation files
 evaluation/*.png

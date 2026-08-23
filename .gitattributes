@@ -1,0 +1,5 @@
+models/*.pkl filter=lfs diff=lfs merge=lfs -text
+models/deployable_url_model.pkl filter=lfs diff=lfs merge=lfs -text
+models/final_url_model.pkl filter=lfs diff=lfs merge=lfs -text
+models/phishing_combined_model.pkl filter=lfs diff=lfs merge=lfs -text
+models/redesigned_url_model.pkl filter=lfs diff=lfs merge=lfs -text
