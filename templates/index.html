@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+
+    <meta charset="UTF-8">
+
+    <meta name="viewport"
+          content="width=device-width, initial-scale=1.0">
+
+    <title>AI Phishing URL Detector</title>
+
+    <style>
+
+        body {
+            margin: 0;
+            font-family: Arial, sans-serif;
+            background: #f4f6f8;
+            color: #222;
+        }
+
+        .container {
+            width: 90%;
+            max-width: 700px;
+            margin: 80px auto;
+            background: white;
+            padding: 40px;
+            border-radius: 15px;
+            box-shadow: 0 8px 30px rgba(0,0,0,0.08);
+        }
+
+        h1 {
+            text-align: center;
+            margin-bottom: 10px;
+        }
+
+        .subtitle {
+            text-align: center;
+            color: #666;
+            margin-bottom: 30px;
+        }
+
+        input[type="text"] {
+            width: 100%;
+            box-sizing: border-box;
+            padding: 15px;
+            font-size: 16px;
+            border: 1px solid #ccc;
+            border-radius: 8px;
+            margin-bottom: 15px;
+        }
+
+        button {
+            width: 100%;
+            padding: 15px;
+            font-size: 16px;
+            border: none;
+            border-radius: 8px;
+            background: #2563eb;
+            color: white;
+            cursor: pointer;
+        }
+
+        button:hover {
+            background: #1d4ed8;
+        }
+
+        .result {
+            margin-top: 30px;
+            padding: 25px;
+            border-radius: 10px;
+            background: #f8fafc;
+        }
+
+        .phishing {
+            color: #dc2626;
+            font-weight: bold;
+        }
+
+        .legitimate {
+            color: #16a34a;
+            font-weight: bold;
+        }
+
+        .high {
+            color: #dc2626;
+            font-weight: bold;
+        }
+
+        .medium {
+            color: #d97706;
+            font-weight: bold;
+        }
+
+        .low {
+            color: #16a34a;
+            font-weight: bold;
+        }
+
+        .error {
+            margin-top: 20px;
+            padding: 15px;
+            background: #fee2e2;
+            color: #991b1b;
+            border-radius: 8px;
+        }
+
+    </style>
+
+</head>
+
+<body>
+
+<div class="container">
+
+    <h1>AI Phishing URL Detector</h1>
+
+    <p class="subtitle">
+        Enter a URL to check whether it is potentially malicious.
+    </p>
+
+    <form method="POST">
+
+        <input
+            type="text"
+            name="url"
+            placeholder="https://example.com"
+            required
+        >
+
+        <button type="submit">
+            Analyze URL
+        </button>
+
+    </form>
+
+
+    {% if result %}
+
+        {% if result.error %}
+
+            <div class="error">
+                {{ result.error }}
+            </div>
+
+        {% else %}
+
+            <div class="result">
+
+                <p>
+                    <strong>URL:</strong>
+                    {{ result.url }}
+                </p>
+
+                <p>
+                    <strong>Prediction:</strong>
+
+                    {% if result.prediction == "PHISHING" %}
+                        <span class="phishing">
+                            PHISHING
+                        </span>
+                    {% else %}
+                        <span class="legitimate">
+                            LEGITIMATE
+                        </span>
+                    {% endif %}
+
+                </p>
+
+                <p>
+                    <strong>Phishing Probability:</strong>
+                    {{ result.probability }}%
+                </p>
+
+                <p>
+                    <strong>Risk Level:</strong>
+
+                    {% if result.risk == "HIGH" %}
+                        <span class="high">HIGH</span>
+                    {% elif result.risk == "MEDIUM" %}
+                        <span class="medium">MEDIUM</span>
+                    {% else %}
+                        <span class="low">LOW</span>
+                    {% endif %}
+
+                </p>
+
+            </div>
+
+        {% endif %}
+
+    {% endif %}
+
+</div>
+
+</body>
+
+</html>

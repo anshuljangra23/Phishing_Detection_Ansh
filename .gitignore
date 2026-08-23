@@ -1,0 +1,23 @@
+__pycache__/
+*.pyc
+venv/
+.venv/
+env/
+.env
+
+# Large datasets
+data/raw/
+data/processed/
+
+# Large ML models
+models/*.pkl
+models/*.joblib
+models/*.h5
+models/*.pt
+models/*.pth
+models/*.onnx
+
+# Generated evaluation files
+evaluation/*.png
+evaluation/*.jpg
+evaluation/*.csv

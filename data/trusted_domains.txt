@@ -1,0 +1,11 @@
+google.com
+microsoft.com
+amazon.com
+wikipedia.org
+apple.com
+github.com
+youtube.com
+linkedin.com
+facebook.com
+instagram.com
+netflix.com
