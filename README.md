@@ -117,6 +117,7 @@ Phishing_Detection_Ansh/
 │
 └── templates/
     └── index.html
+    
 🛠️ Technologies Used
 Python
 Scikit-learn
