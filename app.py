@@ -1,12 +1,14 @@
 from flask import Flask, render_template, request
-import sys
 import os
+import sys
 
 # Allow importing from src/
-sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
+sys.path.insert(
+    0,
+    os.path.abspath(os.path.dirname(__file__))
+)
 
-from src.predict_url import predict_url
-from src.domain_rules import is_trusted_domain
+from src.ai_analyzer import analyze_url
 
 
 app = Flask(__name__)
@@ -22,40 +24,62 @@ def home():
         url = request.form.get("url", "").strip()
 
         if not url:
+
             result = {
                 "error": "Please enter a URL."
             }
 
         else:
+
             try:
-                # Trusted-domain override
-                trusted = is_trusted_domain(url)
 
-                prediction, probability = predict_url(url)
+                # ==========================================
+                # LOCAL AI + ML ANALYSIS
+                # ==========================================
 
-                if trusted:
-                    prediction = 0
-                    probability = min(probability, 0.01)
+                analysis = analyze_url(url)
 
-                if probability >= 0.80:
-                    risk = "HIGH"
-                elif probability >= 0.50:
-                    risk = "MEDIUM"
-                else:
-                    risk = "LOW"
+                # ==========================================
+                # PREPARE RESULT FOR WEB PAGE
+                # ==========================================
 
                 result = {
                     "url": url,
-                    "prediction": (
-                        "PHISHING"
-                        if prediction == 1
-                        else "LEGITIMATE"
+
+                    "prediction": analysis["verdict"],
+
+                    "probability": round(
+                        analysis["probability"] * 100,
+                        2
                     ),
-                    "probability": round(probability * 100, 2),
-                    "risk": risk
+
+                    "risk": analysis["risk_level"],
+
+                    "confidence": round(
+                        analysis["confidence"] * 100,
+                        2
+                    ),
+
+                    "explanation": analysis["explanation"],
+
+                    "indicators": analysis.get(
+                        "indicators",
+                        []
+                    ),
+
+                    "structure_score": analysis.get(
+                        "structure_score",
+                        0
+                    ),
+
+                    "trusted": analysis.get(
+                        "trusted",
+                        False
+                    )
                 }
 
             except Exception as e:
+
                 result = {
                     "error": str(e)
                 }
@@ -67,6 +91,7 @@ def home():
 
 
 if __name__ == "__main__":
+
     app.run(
         debug=True,
         host="127.0.0.1",

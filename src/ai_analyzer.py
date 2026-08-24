@@ -1,21 +1,35 @@
 import re
 from urllib.parse import urlparse
 
+try:
+    from src.domain_rules import is_trusted_domain
+    from src.url_features import extract_url_features
+except ImportError:
+    from domain_rules import is_trusted_domain
+    from url_features import extract_url_features
+
 
 # ============================================================
 # LOCAL AI-STYLE URL ANALYZER
 # ============================================================
 #
-# This module does NOT call an external AI API.
-# It analyzes multiple independent URL signals and produces
-# an interpretable assessment that can be combined with the
-# machine-learning model.
+# This module does NOT use an external AI API.
 #
+# It combines:
+#   1. ML phishing probability
+#   2. URL structural indicators
+#   3. Suspicious keywords
+#   4. Brand impersonation indicators
+#   5. Trusted-domain rules
+#
+# The ML model remains the primary signal.
 # ============================================================
 
 
 SUSPICIOUS_KEYWORDS = [
     "login",
+    "signin",
+    "sign-in",
     "verify",
     "verification",
     "account",
@@ -30,10 +44,13 @@ SUSPICIOUS_KEYWORDS = [
     "gift",
     "free",
     "prize",
-    "signin",
     "credential",
     "payment",
     "wallet",
+    "recover",
+    "unlock",
+    "authenticate",
+    "authentication",
 ]
 
 
@@ -47,479 +64,497 @@ BRAND_KEYWORDS = [
     "instagram",
     "netflix",
     "linkedin",
-    "ebay",
+    "twitter",
+    "youtube",
+    "whatsapp",
+    "bank",
 ]
 
 
-def analyze_url(url, ml_probability, features):
-    """
-    Analyze a URL using interpretable local evidence.
+# ============================================================
+# URL ANALYSIS
+# ============================================================
 
-    Parameters
-    ----------
-    url : str
-        URL being analyzed.
-
-    ml_probability : float
-        Probability produced by the Random Forest.
-
-    features : numpy array
-        30 engineered URL features.
-
-    Returns
-    -------
-    dict
-        AI-style analysis result.
-    """
+def analyze_url_structure(url):
 
     url = str(url).strip()
-    lower_url = url.lower()
 
     parsed = urlparse(url)
 
-    hostname = parsed.hostname or ""
-    path = parsed.path or ""
-    query = parsed.query or ""
+    hostname = (parsed.hostname or "").lower()
+    path = (parsed.path or "").lower()
+    query = (parsed.query or "").lower()
 
-    # Remove numpy array wrapper.
-    values = features.flatten().tolist()
+    full_text = url.lower()
 
-    # Current 30-feature layout.
-    url_length = values[0]
-    hostname_length = values[1]
-    path_length = values[2]
-    query_length = values[3]
-    dot_count = values[4]
-    hyphen_count = values[5]
-    underscore_count = values[6]
-    slash_count = values[7]
-    question_count = values[8]
-    equals_count = values[9]
-    at_count = values[10]
-    percent_count = values[11]
-    ampersand_count = values[12]
-    digit_count = values[13]
-    special_char_count = values[14]
-    digit_ratio = values[15]
-    subdomain_count = values[16]
-    contains_ip = values[17]
-    suspicious_keyword_count = values[18]
-    suspicious_keyword_present = values[19]
-    brand_keyword_count = values[20]
-    brand_keyword_present = values[21]
-    entropy = values[22]
-    path_depth = values[23]
-    query_parameter_count = values[24]
-    double_slash_count = values[25]
-
-    suspicious_reasons = []
-    legitimate_reasons = []
-
+    indicators = []
     score = 0
 
-    # ========================================================
-    # HTTPS
-    # ========================================================
+    # --------------------------------------------------------
+    # Suspicious keywords
+    # --------------------------------------------------------
 
-    if parsed.scheme.lower() == "https":
-        legitimate_reasons.append(
-            "Uses HTTPS."
-        )
-    elif parsed.scheme.lower() == "http":
-        suspicious_reasons.append(
-            "Uses HTTP instead of HTTPS."
-        )
-        score += 1
+    found_suspicious = []
 
-    # ========================================================
-    # IP ADDRESS
-    # ========================================================
+    for keyword in SUSPICIOUS_KEYWORDS:
 
-    if contains_ip:
-        suspicious_reasons.append(
-            "Uses an IP address instead of a normal domain."
-        )
-        score += 4
-
-    # ========================================================
-    # SUSPICIOUS KEYWORDS
-    # ========================================================
-
-    found_suspicious = [
-        keyword
-        for keyword in SUSPICIOUS_KEYWORDS
-        if keyword in lower_url
-    ]
+        if keyword in full_text:
+            found_suspicious.append(keyword)
 
     if found_suspicious:
-        suspicious_reasons.append(
-            "Contains suspicious terms: "
-            + ", ".join(found_suspicious)
-            + "."
+
+        indicators.append(
+            "Suspicious keywords: "
+            + ", ".join(sorted(set(found_suspicious)))
         )
 
-        score += min(len(found_suspicious) * 2, 8)
+        score += min(len(set(found_suspicious)) * 10, 35)
 
-    # ========================================================
-    # BRAND IMPERSONATION
-    # ========================================================
+    # --------------------------------------------------------
+    # Brand keyword
+    # --------------------------------------------------------
 
-    found_brands = [
-        brand
-        for brand in BRAND_KEYWORDS
-        if brand in hostname.lower()
-    ]
+    found_brands = []
+
+    for brand in BRAND_KEYWORDS:
+
+        if brand in hostname:
+
+            found_brands.append(brand)
 
     if found_brands:
 
-        # A brand appearing directly in its expected domain
-        # is not automatically suspicious.
-        base_parts = hostname.lower().split(".")
-
-        brand_is_domain = any(
-            brand == part
-            for brand in found_brands
-            for part in base_parts
+        indicators.append(
+            "Brand-related hostname: "
+            + ", ".join(sorted(set(found_brands)))
         )
 
-        # Suspicious when a brand is combined with deceptive
-        # words or separated by hyphens.
-        deceptive_words = [
-            "login",
-            "verify",
-            "security",
-            "secure",
-            "account",
-            "confirm",
-            "password",
-            "signin",
-        ]
+        score += 10
 
-        deceptive_brand_pattern = (
-            "-" in hostname
-            and any(
-                word in hostname.lower()
-                for word in deceptive_words
-            )
+    # --------------------------------------------------------
+    # HTTP instead of HTTPS
+    # --------------------------------------------------------
+
+    if parsed.scheme.lower() == "http":
+
+        indicators.append(
+            "URL uses HTTP instead of HTTPS"
         )
 
-        if deceptive_brand_pattern:
+        score += 10
 
-            suspicious_reasons.append(
-                "Possible brand impersonation detected."
-            )
+    # --------------------------------------------------------
+    # IP address
+    # --------------------------------------------------------
 
-            score += 6
+    if re.match(
+        r"^\d{1,3}(\.\d{1,3}){3}$",
+        hostname
+    ):
 
-        elif brand_is_domain:
+        indicators.append(
+            "Hostname is an IP address"
+        )
 
-            legitimate_reasons.append(
-                "Brand name appears as part of the domain."
-            )
+        score += 25
 
-    # ========================================================
-    # HYPHENS
-    # ========================================================
+    # --------------------------------------------------------
+    # Hyphens
+    # --------------------------------------------------------
+
+    hyphen_count = hostname.count("-")
 
     if hyphen_count >= 2:
 
-        suspicious_reasons.append(
-            "Domain contains multiple hyphens."
+        indicators.append(
+            f"Hostname contains {hyphen_count} hyphens"
         )
 
-        score += 2
+        score += min(hyphen_count * 5, 20)
 
-    # ========================================================
-    # SUBDOMAINS
-    # ========================================================
+    # --------------------------------------------------------
+    # Excessive subdomains
+    # --------------------------------------------------------
 
-    if subdomain_count >= 3:
+    parts = hostname.split(".")
 
-        suspicious_reasons.append(
-            "Uses an unusually deep subdomain structure."
+    if len(parts) >= 4:
+
+        indicators.append(
+            "Hostname contains many subdomains"
         )
 
-        score += 2
+        score += 15
 
-    # ========================================================
-    # URL LENGTH
-    # ========================================================
+    # --------------------------------------------------------
+    # @ symbol
+    # --------------------------------------------------------
 
-    if url_length >= 100:
+    if "@" in url:
 
-        suspicious_reasons.append(
-            "URL is unusually long."
+        indicators.append(
+            "URL contains @ symbol"
         )
 
-        score += 2
+        score += 25
 
-    # ========================================================
-    # QUERY PARAMETERS
-    # ========================================================
+    # --------------------------------------------------------
+    # Excessive URL length
+    # --------------------------------------------------------
 
-    if query_parameter_count >= 4:
+    if len(url) >= 100:
 
-        suspicious_reasons.append(
-            "Contains many query parameters."
+        indicators.append(
+            "URL is unusually long"
         )
 
-        score += 2
+        score += 10
 
-    # ========================================================
-    # SPECIAL CHARACTERS
-    # ========================================================
+    # --------------------------------------------------------
+    # Encoded characters
+    # --------------------------------------------------------
 
-    if at_count > 0:
+    if "%" in url:
 
-        suspicious_reasons.append(
-            "Contains '@' character, which can obscure the "
-            "actual destination."
+        indicators.append(
+            "URL contains encoded characters"
         )
 
-        score += 4
+        score += 5
 
-    if percent_count >= 3:
+    # --------------------------------------------------------
+    # Multiple query parameters
+    # --------------------------------------------------------
 
-        suspicious_reasons.append(
-            "Contains several encoded characters."
-        )
+    if query:
 
-        score += 2
+        parameter_count = query.count("&") + 1
 
-    # ========================================================
-    # PATH COMPLEXITY
-    # ========================================================
+        if parameter_count >= 4:
 
-    if path_depth >= 5:
-
-        suspicious_reasons.append(
-            "Uses a deeply nested URL path."
-        )
-
-        score += 2
-
-    # ========================================================
-    # ENTROPY
-    # ========================================================
-
-    if entropy >= 4.5:
-
-        suspicious_reasons.append(
-            "URL has relatively high character randomness."
-        )
-
-        score += 2
-
-    # ========================================================
-    # CLEAN ROOT DOMAIN
-    # ========================================================
-
-    if (
-        parsed.scheme.lower() == "https"
-        and
-        path in ("", "/")
-        and
-        query == ""
-        and
-        hyphen_count == 0
-        and
-        contains_ip == 0
-        and
-        suspicious_keyword_count == 0
-        and
-        at_count == 0
-    ):
-
-        legitimate_reasons.append(
-            "Clean HTTPS root-domain structure with no "
-            "obvious phishing indicators."
-        )
-
-    # ========================================================
-    # LOCAL EVIDENCE SCORE
-    # ========================================================
-
-    # Convert the rule score to a bounded risk score.
-    local_risk = min(score / 20.0, 1.0)
-
-    # ========================================================
-    # COMBINE ML + LOCAL EVIDENCE
-    # ========================================================
-
-    # We intentionally do NOT simply replace the ML model.
-    #
-    # ML remains the primary statistical signal.
-    # Local analysis provides additional interpretable evidence.
-
-    if ml_probability >= 0.90 and local_risk >= 0.25:
-
-        final_probability = (
-            ml_probability * 0.75
-            + local_risk * 0.25
-        )
-
-    elif ml_probability >= 0.70:
-
-        final_probability = (
-            ml_probability * 0.55
-            + local_risk * 0.45
-        )
-
-    else:
-
-        final_probability = (
-            ml_probability * 0.70
-            + local_risk * 0.30
-        )
-
-    final_probability = max(
-        0.0,
-        min(final_probability, 1.0)
-    )
-
-    # ========================================================
-    # FINAL VERDICT
-    # ========================================================
-
-    if final_probability >= 0.80:
-
-        verdict = "PHISHING"
-        confidence = final_probability
-
-    elif final_probability >= 0.50:
-
-        verdict = "SUSPICIOUS"
-        confidence = final_probability
-
-    else:
-
-        verdict = "LIKELY LEGITIMATE"
-        confidence = 1.0 - final_probability
-
-    # ========================================================
-    # EXPLANATION
-    # ========================================================
-
-    if verdict == "PHISHING":
-
-        if suspicious_reasons:
-
-            explanation = (
-                "Multiple phishing-related indicators were "
-                "detected."
+            indicators.append(
+                "URL contains many query parameters"
             )
 
-        else:
+            score += 10
 
-            explanation = (
-                "The machine-learning model considers this URL "
-                "strongly similar to phishing URLs."
-            )
+    # --------------------------------------------------------
+    # Deep path
+    # --------------------------------------------------------
 
-    elif verdict == "SUSPICIOUS":
+    path_parts = [
+        x for x in path.split("/")
+        if x
+    ]
 
-        explanation = (
-            "The URL contains some potentially suspicious "
-            "characteristics but does not provide enough "
-            "evidence for a high-confidence phishing verdict."
+    if len(path_parts) >= 5:
+
+        indicators.append(
+            "URL contains a deep path"
         )
 
-    else:
-
-        if legitimate_reasons:
-
-            explanation = (
-                "The URL has a relatively clean structure and "
-                "few obvious phishing indicators."
-            )
-
-        else:
-
-            explanation = (
-                "The available URL evidence does not strongly "
-                "indicate phishing."
-            )
+        score += 10
 
     return {
-        "verdict": verdict,
-        "confidence": confidence,
-        "final_probability": final_probability,
-        "local_risk": local_risk,
-        "ml_probability": ml_probability,
-        "score": score,
-        "suspicious_reasons": suspicious_reasons,
-        "legitimate_reasons": legitimate_reasons,
-        "explanation": explanation,
+        "score": min(score, 100),
+        "indicators": indicators,
+        "suspicious_keywords": sorted(
+            set(found_suspicious)
+        ),
+        "brand_keywords": sorted(
+            set(found_brands)
+        ),
     }
 
 
 # ============================================================
-# STANDALONE TEST
+# FINAL DECISION
+# ============================================================
+
+def analyze_url(url, ml_probability=None):
+
+    url = str(url).strip()
+
+    # --------------------------------------------------------
+    # Trusted domain
+    # --------------------------------------------------------
+
+    trusted = is_trusted_domain(url)
+
+    if trusted:
+
+        return {
+            "prediction": 0,
+            "probability": 0.01,
+            "risk_level": "LOW",
+            "verdict": "LEGITIMATE",
+            "confidence": 0.99,
+            "explanation": (
+                "The domain is present in the trusted-domain "
+                "database."
+            ),
+            "indicators": [],
+            "trusted": True,
+        }
+
+    # --------------------------------------------------------
+    # Get ML probability
+    # --------------------------------------------------------
+
+    if ml_probability is None:
+
+        try:
+
+            from src.predict_url import predict_url
+
+        except ImportError:
+
+            from predict_url import predict_url
+
+        _, ml_probability = predict_url(url)
+
+    ml_probability = float(ml_probability)
+
+    # --------------------------------------------------------
+    # Analyze URL structure
+    # --------------------------------------------------------
+
+    structure = analyze_url_structure(url)
+
+    structure_score = structure["score"]
+
+    indicators = structure["indicators"]
+
+    # --------------------------------------------------------
+    # IMPORTANT:
+    #
+    # ML probability is the primary signal.
+    #
+    # Structural analysis can increase confidence,
+    # but a clean-looking URL cannot erase a strong
+    # ML phishing probability.
+    # --------------------------------------------------------
+
+    if ml_probability >= 0.90:
+
+        verdict = "PHISHING"
+        risk_level = "HIGH"
+
+        confidence = min(
+            0.95,
+            0.70 + (ml_probability * 0.25)
+        )
+
+        if indicators:
+
+            explanation = (
+                "The machine-learning model detected a "
+                "very high phishing probability and the URL "
+                "also contains suspicious indicators."
+            )
+
+        else:
+
+            explanation = (
+                "The machine-learning model detected a "
+                "very high phishing probability. The URL "
+                "does not contain many obvious structural "
+                "indicators, so further verification is "
+                "recommended."
+            )
+
+    elif ml_probability >= 0.80:
+
+        verdict = "SUSPICIOUS"
+        risk_level = "HIGH"
+
+        confidence = min(
+            0.90,
+            0.60 + (ml_probability * 0.25)
+        )
+
+        explanation = (
+            "The machine-learning model gives this URL "
+            "a high phishing probability. The URL should "
+            "be treated as suspicious even though its "
+            "visible structure may appear normal."
+        )
+
+    elif ml_probability >= 0.60:
+
+        verdict = "SUSPICIOUS"
+        risk_level = "MEDIUM"
+
+        confidence = 0.60 + (
+            (ml_probability - 0.60) * 0.50
+        )
+
+        explanation = (
+            "The machine-learning model detected a "
+            "moderately high phishing probability. "
+            "Additional verification is recommended."
+        )
+
+    elif ml_probability >= 0.40:
+
+        verdict = "NEEDS REVIEW"
+        risk_level = "MEDIUM"
+
+        confidence = 0.55
+
+        explanation = (
+            "The model result is uncertain. The URL "
+            "should be reviewed before being considered "
+            "safe."
+        )
+
+    else:
+
+        verdict = "LIKELY LEGITIMATE"
+        risk_level = "LOW"
+
+        confidence = max(
+            0.55,
+            1.0 - ml_probability
+        )
+
+        if indicators:
+
+            explanation = (
+                "The machine-learning probability is low, "
+                "but some URL indicators deserve attention."
+            )
+
+        else:
+
+            explanation = (
+                "The URL has a low machine-learning "
+                "phishing probability and no major "
+                "structural warning signs were detected."
+            )
+
+    # --------------------------------------------------------
+    # Add structural information
+    # --------------------------------------------------------
+
+    if structure_score >= 40:
+
+        explanation += (
+            " Several suspicious URL characteristics "
+            "were also detected."
+        )
+
+    elif structure_score >= 20:
+
+        explanation += (
+            " Some suspicious URL characteristics "
+            "were detected."
+        )
+
+    return {
+        "prediction": 1 if verdict in (
+            "PHISHING",
+            "SUSPICIOUS"
+        ) else 0,
+
+        "probability": ml_probability,
+
+        "risk_level": risk_level,
+
+        "verdict": verdict,
+
+        "confidence": min(
+            max(confidence, 0.0),
+            1.0
+        ),
+
+        "explanation": explanation,
+
+        "indicators": indicators,
+
+        "trusted": False,
+
+        "structure_score": structure_score,
+
+        "suspicious_keywords": structure[
+            "suspicious_keywords"
+        ],
+
+        "brand_keywords": structure[
+            "brand_keywords"
+        ],
+    }
+
+
+# ============================================================
+# COMMAND-LINE TEST
 # ============================================================
 
 if __name__ == "__main__":
 
-    print("=" * 60)
+    test_urls = [
+
+        "https://www.google.com",
+
+        "https://www.rezoni.com/",
+
+        "http://google-login-security.com",
+
+        "http://secure-login-account-verify.com",
+    ]
+
+    print("\n" + "=" * 60)
     print("LOCAL AI URL ANALYZER")
     print("=" * 60)
 
-    test_urls = [
-        (
-            "https://www.google.com",
-            0.01
-        ),
-        (
-            "https://www.rezoni.com/",
-            0.8733
-        ),
-        (
-            "http://google-login-security.com",
-            0.8933
-        ),
-        (
-            "http://secure-login-account-verify.com",
-            0.9933
-        ),
-    ]
+    for url in test_urls:
 
-    # Minimal test features.
-    # The real predictor passes actual 30-feature vectors.
-    import numpy as np
+        try:
 
-    for url, probability in test_urls:
+            result = analyze_url(url)
 
-        dummy_features = np.zeros(
-            (1, 30),
-            dtype=float
-        )
+            print("\nURL:")
+            print(url)
 
-        result = analyze_url(
-            url,
-            probability,
-            dummy_features
-        )
+            print(
+                f"\nML probability: "
+                f"{result['probability'] * 100:.2f}%"
+            )
 
-        print("\nURL:")
-        print(url)
+            print(
+                f"AI-style verdict: "
+                f"{result['verdict']}"
+            )
 
-        print(
-            "ML probability:",
-            f"{probability * 100:.2f}%"
-        )
+            print(
+                f"Risk level: "
+                f"{result['risk_level']}"
+            )
 
-        print(
-            "AI-style verdict:",
-            result["verdict"]
-        )
+            print(
+                f"Confidence: "
+                f"{result['confidence'] * 100:.2f}%"
+            )
 
-        print(
-            "Confidence:",
-            f"{result['confidence'] * 100:.2f}%"
-        )
+            print(
+                f"Explanation: "
+                f"{result['explanation']}"
+            )
 
-        print(
-            "Explanation:",
-            result["explanation"]
-        )
+            if result["indicators"]:
 
-    print("\nDone.")
+                print("\nIndicators:")
+
+                for indicator in result["indicators"]:
+
+                    print(
+                        f"  - {indicator}"
+                    )
+
+        except Exception as e:
+
+            print("\nERROR:")
+            print(e)
+
+    print("\n" + "=" * 60)
+    print("Done.")

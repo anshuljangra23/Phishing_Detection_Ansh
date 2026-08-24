@@ -3,33 +3,25 @@ import os
 import joblib
 from scipy.sparse import hstack
 
-# =====================================================
-# IMPORTS
-# =====================================================
-
 try:
-    # When imported by Flask / as a package
     from src.domain_rules import is_trusted_domain
     from src.url_features import extract_url_features
-
 except ImportError:
-    # When running directly:
-    # python src\predict_url.py "URL"
     from domain_rules import is_trusted_domain
     from url_features import extract_url_features
 
 
-# =====================================================
+# ============================================================
 # MODEL FILES
-# =====================================================
+# ============================================================
 
 MODEL_PATH = "models/final_url_model.pkl"
 VECTORIZER_PATH = "models/final_url_tfidf_vectorizer.pkl"
 
 
-# =====================================================
+# ============================================================
 # LOAD MODEL
-# =====================================================
+# ============================================================
 
 def load_model():
 
@@ -49,10 +41,9 @@ def load_model():
     return model, vectorizer
 
 
-# =====================================================
-# PREDICT URL
-# =====================================================
-
+# ============================================================
+# RAW ML PREDICTION
+# ============================================================
 
 def predict_url(url):
 
@@ -60,20 +51,15 @@ def predict_url(url):
 
     url = str(url).strip()
 
-    # Extract the exact same 30 features
-    # used during model training.
     numeric_features = extract_url_features(url)
 
-    # Character-level TF-IDF
     text_features = vectorizer.transform([url])
 
-    # Combine features
     combined_features = hstack([
         numeric_features,
         text_features
     ])
 
-    # ML prediction
     prediction = model.predict(
         combined_features
     )[0]
@@ -82,21 +68,31 @@ def predict_url(url):
         combined_features
     )[0][1]
 
-    # =================================================
-    # TRUSTED DOMAIN OVERRIDE
-    # =================================================
-
-    if is_trusted_domain(url):
-
-        prediction = 0
-        probability = 0.01
-
     return prediction, probability
 
 
-# =====================================================
+# ============================================================
+# FINAL AI ANALYSIS
+# ============================================================
+
+def analyze_url(url):
+
+    _, ml_probability = predict_url(url)
+
+    try:
+        from src.ai_analyzer import analyze_url as local_ai_analysis
+    except ImportError:
+        from ai_analyzer import analyze_url as local_ai_analysis
+
+    return local_ai_analysis(
+        url,
+        ml_probability=ml_probability
+    )
+
+
+# ============================================================
 # RISK LEVEL
-# =====================================================
+# ============================================================
 
 def get_risk_level(probability):
 
@@ -110,16 +106,18 @@ def get_risk_level(probability):
         return "LOW"
 
 
-# =====================================================
-# MAIN
-# =====================================================
+# ============================================================
+# COMMAND LINE
+# ============================================================
 
 if __name__ == "__main__":
 
     if len(sys.argv) < 2:
 
         print("\nUsage:")
-        print('python src\\predict_url.py "URL"')
+        print(
+            'python src\\predict_url.py "URL"'
+        )
 
         print("\nExample:")
         print(
@@ -131,39 +129,49 @@ if __name__ == "__main__":
 
     url = sys.argv[1].strip()
 
-    # =================================================
-    # ML PREDICTION
-    # =================================================
+    result = analyze_url(url)
 
-    prediction, probability = predict_url(url)
-
-    risk = get_risk_level(probability)
-
-    # =================================================
-    # DISPLAY RESULT
-    # =================================================
-
-    print("\n" + "=" * 55)
+    print("\n" + "=" * 60)
     print("AI PHISHING URL DETECTOR")
-    print("=" * 55)
+    print("=" * 60)
 
     print("\nURL:")
     print(url)
 
     print("\nPrediction:")
-
-    if prediction == 1:
-        print("PHISHING")
-    else:
-        print("LEGITIMATE")
+    print(result["verdict"])
 
     print(
         f"\nPhishing Probability: "
-        f"{probability * 100:.2f}%"
+        f"{result['probability'] * 100:.2f}%"
     )
 
     print(
-        f"Risk Level: {risk}"
+        f"Risk Level: "
+        f"{result['risk_level']}"
     )
 
-    print("\n" + "=" * 55)
+    print(
+        f"AI Confidence: "
+        f"{result['confidence'] * 100:.2f}%"
+    )
+
+    print(
+        f"\nExplanation:"
+    )
+
+    print(
+        result["explanation"]
+    )
+
+    if result["indicators"]:
+
+        print("\nIndicators:")
+
+        for indicator in result["indicators"]:
+
+            print(
+                f"  - {indicator}"
+            )
+
+    print("\n" + "=" * 60)
